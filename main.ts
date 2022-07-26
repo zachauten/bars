@@ -1,124 +1,106 @@
 #! /usr/bin/env deno run -A
+import { writeAllSync } from "https://deno.land/std/streams/conversion.ts";
 
 async function main() {
-  const cont = new AbortController();
-  const signal = cont.signal;
+  const bars = new Bars();
   Deno.addSignalListener("SIGINT", () => {
-    cont.abort();
+    bars.stop();
+    Deno.exit();
   });
 
-  let bars = new Bars({ signal });
-  const foo = {
-    name: "foo bar baz bar",
-    current: 0,
-    total: 500,
-  };
-  bars.add(foo);
-  const zach = {
-    name: "zach",
-    current: 0,
-    total: 1234,
-  };
-  bars.add(zach);
-  const hazel = {
-    name: "hazel",
-    current: 0,
-    total: 100,
-  }; 
-  bars.add(hazel);
+  const foo = bars.add("foo", 100);
+  const bar = bars.add("bar", 250);
+  const baz = bars.add("baz", 350);
 
-  bars.render();
-  let i = 0;
-  while(i < 15) {
-    zach.current += 150;
-    hazel.current += 5;
-    await new Promise((res) => setTimeout(res, 1000));
-    foo.current += 123;
-    zach.current += 300
-    await new Promise((res) => setTimeout(res, 1000));
-    hazel.current += 10;
-    foo.current += 50;
-    await new Promise((res) => setTimeout(res, 1000));
-    i++;  
+  while (bars.displayed.length) {
+    for (const b of [foo, bar, baz]) {
+      b.update(30);
+      bars.render();
+    }
+    await new Promise((res) => setTimeout(res, 100));
   }
-
-
+  bars.stop();
 }
 
-class Bars {
-  pending: Bar[] = [];
+export class Bars {
   displayed: Bar[] = [];
-  signal?: AbortSignal;
-  bar_count: number;
-  line_width: number;
+  width: number;
 
-  constructor(opts?: RenderOptions) {
-    this.signal = opts?.signal;
-    this.bar_count = opts?.bar_count || 10;
-    this.line_width = opts?.bar_count || 50;
+  constructor(opts?: BarOptions) {
+    this.width = opts?.width || 50;
   }
 
-  add(bar: Bar) {
-    if (this.displayed.length < this.bar_count) {
-      this.displayed.push(bar);
-    } else {
-      this.pending.push(bar);
-    }
+  add(name: string, total: number): Bar {
+    const bar = new Bar(name, total);
+    this.displayed.push(bar);
+    return bar;
   }
 
-  async render() {
+  render() {
     out(hide);
-		out(save);
-    while (!this.signal?.aborted) {
-      this.displayed = this.displayed.filter(x => x.current < x.total);
-      for (let i = 0; i < this.displayed.length; i++) {
-        const title = this.displayed[i].name.slice(0, 10).padEnd(10, ' ');
-        const prog = this.displayed[i].current / this.displayed[i].total;
-        const line = `${title} [${"=".repeat(prog * this.line_width).padEnd(this.line_width, "-")}] ${prog.toString().slice(0, 4)}%`
-        out(line);
-				out(eraseline);
-        out("\n");
-      }
-			out(restore);
-      // for testing
-      await new Promise((res) => setTimeout(res, 1000));  
-    }
-		out(downline(this.displayed.length));
+    this.displayed.forEach(x => {
+      const title = x.name.slice(0, 10).padEnd(10, " ");
+      const prog = x.current / x.total;
+      const line = `${title} [${
+        "=".repeat(prog * this.width).padEnd(this.width, "-")
+      }] ${(prog * 100).toString().slice(0, 4)}%`;
+      out(line);
+      out(eraseline);
+      out("\n");
+    })
+    out(save);
+    out(upline(this.displayed.length));
+    this.displayed = this.displayed.filter(x => x.current < x.total);
+  }
+
+  stop() {
+    out(eraseline);
+    out(restore);
     out(show);
   }
 }
 
-interface Bar {
-  current: number,
-  name: string,
-  total: number,
+class Bar {
+  current: number;
+  name: string;
+  total: number;
+
+  constructor(name: string, total: number) {
+    this.current = 0;
+    this.name = name;
+    this.total = total;
+  }
+
+  update(amount: number, _msg?: string) {
+    this.current += amount;
+    if (this.current > this.total) this.current = this.total;
+  }
 }
 
-interface RenderOptions {
-  signal?: AbortSignal,
-  progress?: "percent" | "count",
-  bar_count?: number,
-  line_width?: number,
+interface BarOptions {
+  signal?: AbortSignal;
+  progress?: "percent" | "count";
+  width?: number;
 }
 
-function is_xterm(): boolean {
-  return !!Deno.env.get("TERM")?.startsWith('xterm')
+function _is_xterm(): boolean {
+  return !!Deno.env.get("TERM")?.startsWith("xterm");
 }
 
 const hide = "\x1b[?25l";
 const show = "\x1b[?25h";
-const eraseline = "\x1b[J"
+const eraseline = "\x1b[J";
 const save = "\u001B7";
 const restore = "\u001B8";
 function upline(n: number) {
   return `\x1b[${n}F`;
 }
-function downline(n: number) {
-	return `\x1b[${n}E`;
+function _downline(n: number) {
+  return `\x1b[${n}E`;
 }
 const encoder = new TextEncoder();
 function out(msg: string) {
-  Deno.writeAllSync(Deno.stdout, encoder.encode(msg));
+  writeAllSync(Deno.stdout, encoder.encode(msg));
 }
 
 await main();
