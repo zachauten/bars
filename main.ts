@@ -1,27 +1,6 @@
 #! /usr/bin/env deno run -A
 import { writeAllSync } from "https://deno.land/std/streams/conversion.ts";
 
-async function main() {
-  const bars = new Bars();
-  Deno.addSignalListener("SIGINT", () => {
-    bars.stop();
-    Deno.exit();
-  });
-
-  const foo = bars.add("foo", 100);
-  const bar = bars.add("bar", 250);
-  const baz = bars.add("baz", 350);
-
-  while (bars.displayed.length) {
-    for (const b of [foo, bar, baz]) {
-      b.update(30);
-      bars.render();
-    }
-    await new Promise((res) => setTimeout(res, 100));
-  }
-  bars.stop();
-}
-
 export class Bars {
   displayed: Bar[] = [];
   width: number;
@@ -78,7 +57,7 @@ class Bar {
 }
 
 interface BarOptions {
-  signal?: AbortSignal;
+  // TODO: Add display options
   progress?: "percent" | "count";
   width?: number;
 }
@@ -102,5 +81,3 @@ const encoder = new TextEncoder();
 function out(msg: string) {
   writeAllSync(Deno.stdout, encoder.encode(msg));
 }
-
-await main();
